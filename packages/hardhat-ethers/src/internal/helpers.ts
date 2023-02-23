@@ -1,5 +1,5 @@
-import type { ethers } from "ethers";
-import type { SignerWithAddress } from "../signers";
+import type { ethers as EthersT } from "ethers";
+import type { CustomEthersSigner } from "../signers";
 import type { FactoryOptions, Libraries } from "../types";
 
 import { NomicLabsHardhatPluginError } from "hardhat/plugins";
@@ -14,6 +14,8 @@ interface Link {
   libraryName: string;
   address: string;
 }
+
+type DeployedContract = ReturnType<EthersT.ContractFactory["deploy"]>;
 
 const pluginName = "hardhat-ethers";
 
@@ -41,8 +43,8 @@ function isArtifact(artifact: any): artifact is Artifact {
 
 export async function getSigners(
   hre: HardhatRuntimeEnvironment
-): Promise<SignerWithAddress[]> {
-  const accounts = await hre.ethers.provider.listAccounts();
+): Promise<CustomEthersSigner[]> {
+  const accounts: string[] = await hre.ethers.provider.send("eth_accounts", []);
 
   const signersWithAddress = await Promise.all(
     accounts.map((account) => getSigner(hre, account))
@@ -54,14 +56,15 @@ export async function getSigners(
 export async function getSigner(
   hre: HardhatRuntimeEnvironment,
   address: string
-): Promise<SignerWithAddress> {
-  const { SignerWithAddress: SignerWithAddressImpl } = await import(
+): Promise<CustomEthersSigner> {
+  const { CustomEthersSigner: SignerWithAddressImpl } = await import(
     "../signers"
   );
 
-  const signer = hre.ethers.provider.getSigner(address);
-
-  const signerWithAddress = await SignerWithAddressImpl.create(signer);
+  const signerWithAddress = await SignerWithAddressImpl.create(
+    hre.ethers.provider,
+    address
+  );
 
   return signerWithAddress;
 }
@@ -69,7 +72,7 @@ export async function getSigner(
 export async function getImpersonatedSigner(
   hre: HardhatRuntimeEnvironment,
   address: string
-): Promise<SignerWithAddress> {
+): Promise<CustomEthersSigner> {
   await hre.ethers.provider.send("hardhat_impersonateAccount", [address]);
   return getSigner(hre, address);
 }
@@ -77,23 +80,23 @@ export async function getImpersonatedSigner(
 export function getContractFactory(
   hre: HardhatRuntimeEnvironment,
   name: string,
-  signerOrOptions?: ethers.Signer | FactoryOptions
-): Promise<ethers.ContractFactory>;
+  signerOrOptions?: EthersT.Signer | FactoryOptions
+): Promise<EthersT.ContractFactory>;
 
 export function getContractFactory(
   hre: HardhatRuntimeEnvironment,
   abi: any[],
-  bytecode: ethers.utils.BytesLike,
-  signer?: ethers.Signer
-): Promise<ethers.ContractFactory>;
+  bytecode: EthersT.BytesLike,
+  signer?: EthersT.Signer
+): Promise<EthersT.ContractFactory>;
 
 export async function getContractFactory(
   hre: HardhatRuntimeEnvironment,
   nameOrAbi: string | any[],
   bytecodeOrFactoryOptions?:
-    | (ethers.Signer | FactoryOptions)
-    | ethers.utils.BytesLike,
-  signer?: ethers.Signer
+    | (EthersT.Signer | FactoryOptions)
+    | EthersT.BytesLike,
+  signer?: EthersT.Signer
 ) {
   if (typeof nameOrAbi === "string") {
     const artifact = await hre.artifacts.readArtifact(nameOrAbi);
@@ -101,23 +104,22 @@ export async function getContractFactory(
     return getContractFactoryFromArtifact(
       hre,
       artifact,
-      bytecodeOrFactoryOptions as ethers.Signer | FactoryOptions | undefined
+      bytecodeOrFactoryOptions as EthersT.Signer | FactoryOptions | undefined
     );
   }
 
   return getContractFactoryByAbiAndBytecode(
     hre,
     nameOrAbi,
-    bytecodeOrFactoryOptions as ethers.utils.BytesLike,
+    bytecodeOrFactoryOptions as EthersT.BytesLike,
     signer
   );
 }
 
 function isFactoryOptions(
-  signerOrOptions?: ethers.Signer | FactoryOptions
+  signerOrOptions?: EthersT.Signer | FactoryOptions
 ): signerOrOptions is FactoryOptions {
-  const { Signer } = require("ethers") as typeof ethers;
-  if (signerOrOptions === undefined || signerOrOptions instanceof Signer) {
+  if (signerOrOptions === undefined || "provider" in signerOrOptions) {
     return false;
   }
 
@@ -127,10 +129,10 @@ function isFactoryOptions(
 export async function getContractFactoryFromArtifact(
   hre: HardhatRuntimeEnvironment,
   artifact: Artifact,
-  signerOrOptions?: ethers.Signer | FactoryOptions
+  signerOrOptions?: EthersT.Signer | FactoryOptions
 ) {
   let libraries: Libraries = {};
-  let signer: ethers.Signer | undefined;
+  let signer: EthersT.Signer | undefined;
 
   if (!isArtifact(artifact)) {
     throw new NomicLabsHardhatPluginError(
@@ -168,7 +170,7 @@ async function collectLibrariesAndLink(
   artifact: Artifact,
   libraries: Libraries
 ) {
-  const { utils } = require("ethers") as typeof ethers;
+  const ethers = require("ethers") as typeof EthersT;
 
   const neededLibraries: Array<{
     sourceName: string;
@@ -186,10 +188,14 @@ async function collectLibrariesAndLink(
   for (const [linkedLibraryName, linkedLibraryAddress] of Object.entries(
     libraries
   )) {
-    if (!utils.isAddress(linkedLibraryAddress)) {
+    if (!ethers.isAddress(linkedLibraryAddress)) {
       throw new NomicLabsHardhatPluginError(
         pluginName,
-        `You tried to link the contract ${artifact.contractName} with the library ${linkedLibraryName}, but provided this invalid address: ${linkedLibraryAddress}`
+        `You tried to link the contract ${
+          artifact.contractName
+        } with the library ${linkedLibraryName}, but provided this invalid address: ${
+          linkedLibraryAddress as string
+        }`
       );
     }
 
@@ -279,10 +285,10 @@ Learn more about linking contracts at https://hardhat.org/hardhat-runner/plugins
 async function getContractFactoryByAbiAndBytecode(
   hre: HardhatRuntimeEnvironment,
   abi: any[],
-  bytecode: ethers.utils.BytesLike,
-  signer?: ethers.Signer
+  bytecode: EthersT.BytesLike,
+  signer?: EthersT.Signer
 ) {
-  const { ContractFactory } = require("ethers") as typeof ethers;
+  const { ContractFactory } = require("ethers") as typeof EthersT;
 
   if (signer === undefined) {
     const signers = await hre.ethers.getSigners();
@@ -301,7 +307,7 @@ export async function getContractAt(
   hre: HardhatRuntimeEnvironment,
   nameOrAbi: string | any[],
   address: string,
-  signer?: ethers.Signer
+  signer?: EthersT.Signer
 ) {
   if (typeof nameOrAbi === "string") {
     const artifact = await hre.artifacts.readArtifact(nameOrAbi);
@@ -309,7 +315,7 @@ export async function getContractAt(
     return getContractAtFromArtifact(hre, artifact, address, signer);
   }
 
-  const { Contract } = require("ethers") as typeof ethers;
+  const { Contract } = require("ethers") as typeof EthersT;
 
   if (signer === undefined) {
     const signers = await hre.ethers.getSigners();
@@ -318,7 +324,7 @@ export async function getContractAt(
 
   // If there's no signer, we want to put the provider for the selected network here.
   // This allows read only operations on the contract interface.
-  const signerOrProvider: ethers.Signer | ethers.providers.Provider =
+  const signerOrProvider: EthersT.Signer | EthersT.Provider =
     signer !== undefined ? signer : hre.ethers.provider;
 
   const abiWithAddedGas = addGasToAbiMethodsIfNecessary(
@@ -333,21 +339,21 @@ export async function deployContract(
   hre: HardhatRuntimeEnvironment,
   name: string,
   args?: any[],
-  signerOrOptions?: ethers.Signer | FactoryOptions
-): Promise<ethers.Contract>;
+  signerOrOptions?: EthersT.Signer | FactoryOptions
+): Promise<DeployedContract>;
 
 export async function deployContract(
   hre: HardhatRuntimeEnvironment,
   name: string,
-  signerOrOptions?: ethers.Signer | FactoryOptions
-): Promise<ethers.Contract>;
+  signerOrOptions?: EthersT.Signer | FactoryOptions
+): Promise<DeployedContract>;
 
 export async function deployContract(
   hre: HardhatRuntimeEnvironment,
   name: string,
-  argsOrSignerOrOptions?: any[] | ethers.Signer | FactoryOptions,
-  signerOrOptions?: ethers.Signer | FactoryOptions
-): Promise<ethers.Contract> {
+  argsOrSignerOrOptions?: any[] | EthersT.Signer | FactoryOptions,
+  signerOrOptions?: EthersT.Signer | FactoryOptions
+): Promise<DeployedContract> {
   let args = [];
   if (Array.isArray(argsOrSignerOrOptions)) {
     args = argsOrSignerOrOptions;
@@ -359,11 +365,13 @@ export async function deployContract(
 }
 
 export async function getContractAtFromArtifact(
-  hre: HardhatRuntimeEnvironment,
+  // FVTODO remove this param?
+  _hre: HardhatRuntimeEnvironment,
   artifact: Artifact,
   address: string,
-  signer?: ethers.Signer
+  signer?: EthersT.Signer
 ) {
+  const ethers = require("ethers") as typeof EthersT;
   if (!isArtifact(artifact)) {
     throw new NomicLabsHardhatPluginError(
       pluginName,
@@ -371,18 +379,21 @@ export async function getContractAtFromArtifact(
     );
   }
 
-  const factory = await getContractFactoryByAbiAndBytecode(
-    hre,
-    artifact.abi,
-    "0x",
-    signer
-  );
+  const contract = new ethers.Contract(address, artifact.abi, signer);
 
-  let contract = factory.attach(address);
-  // If there's no signer, we connect the contract instance to the provider for the selected network.
-  if (contract.provider === null) {
-    contract = contract.connect(hre.ethers.provider);
-  }
+  // FVTODO not sure about this
+  // const factory = await getContractFactoryByAbiAndBytecode(
+  //   hre,
+  //   artifact.abi,
+  //   "0x",
+  //   signer
+  // );
+  //
+  // let contract = factory.attach(address);
+  // // If there's no signer, we connect the contract instance to the provider for the selected network.
+  // if (contract.provider === null) {
+  //   contract = contract.connect(hre.ethers.provider);
+  // }
 
   return contract;
 }
@@ -395,7 +406,7 @@ function addGasToAbiMethodsIfNecessary(
   networkConfig: NetworkConfig,
   abi: any[]
 ): any[] {
-  const { BigNumber } = require("ethers") as typeof ethers;
+  const ethers = require("ethers") as typeof EthersT;
 
   if (networkConfig.gas === "auto" || networkConfig.gas === undefined) {
     return abi;
@@ -406,7 +417,7 @@ function addGasToAbiMethodsIfNecessary(
   // block gas limit, especially on Hardhat Network.
   // To avoid this, we substract 21000.
   // HOTFIX: We substract 1M for now. See: https://github.com/ethers-io/ethers.js/issues/1058#issuecomment-703175279
-  const gasLimit = BigNumber.from(networkConfig.gas).sub(1000000).toHexString();
+  const gasLimit = ethers.toBeHex(BigInt(networkConfig.gas) - 1000000n);
 
   const modifiedAbi: any[] = [];
 
