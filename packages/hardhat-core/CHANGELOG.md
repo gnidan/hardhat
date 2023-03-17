@@ -1,5 +1,11 @@
 # hardhat
 
+## 2.13.1
+
+### Patch Changes
+
+- 5d4d1edba: Fixed a problem when importing scoped packages in a Yarn Berry monorepo that uses PnP (thanks @zouguangxian!)
+
 ## 2.13.0
 
 ### Minor Changes
