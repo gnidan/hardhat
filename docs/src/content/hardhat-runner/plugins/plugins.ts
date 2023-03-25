@@ -739,6 +739,13 @@ const communityPlugins: IPlugin[] = [
       "Hardhat plugin for Uniswap V2 (pancakeswap protocol) testing and deployment. You can use it to test features such as pair creation, liquidity provisioning, and swaps.",
     tags: ["uniswap", "pancakeswap", "testing", "deployment", "automated"],
   },
+  {
+    name: "@truffle/dashboard-hardhat-plugin",
+    author: "Truffle",
+    authorUrl: "https://trufflesuite.com/",
+    description: "Enable project-specific features inside Truffle Dashboard, including advanced calldata decoding and more",
+    tags: ["truffle-dashboard", "transaction", "signing", "decoding"],
+   
 ];
 
 const officialPlugins: IPlugin[] = [
