@@ -745,7 +745,7 @@ const communityPlugins: IPlugin[] = [
     authorUrl: "https://trufflesuite.com/",
     description: "Enable project-specific features inside Truffle Dashboard, including advanced calldata decoding and more",
     tags: ["truffle-dashboard", "transaction", "signing", "decoding"],
-   
+  },
 ];
 
 const officialPlugins: IPlugin[] = [
